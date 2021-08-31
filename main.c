@@ -192,9 +192,10 @@ init_vk(struct vkcube *vc, const char *extension)
                         .flags = vc->protected ? VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT : 0,
                         .pQueuePriorities = (float []) { 1.0f },
                      },
-                     .enabledExtensionCount = 1,
+                     .enabledExtensionCount = 2,
                      .ppEnabledExtensionNames = (const char * const []) {
                         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+                        VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME,
                      },
                   },
                   NULL,
@@ -1731,6 +1732,37 @@ int main(int argc, char *argv[])
    gettimeofday(&vc.start_tv, NULL);
 
    init_display(&vc);
+
+   /* Wait 10 secs or until hotplug happens. */
+   uint64_t timeout = 10ul * 1000 * 1000 * 1000;
+
+   struct VkDeviceEventInfoEXT e_info = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_EVENT_INFO_EXT,
+      .deviceEvent = VK_DEVICE_EVENT_TYPE_DISPLAY_HOTPLUG_EXT,
+   };
+
+   VkFence fence;
+
+   PFN_vkRegisterDeviceEventEXT vkRegisterDeviceEventEXT =
+      (PFN_vkRegisterDeviceEventEXT)
+      (vkGetDeviceProcAddr)(vc.device, "vkRegisterDeviceEventEXT");
+
+   if (!vkRegisterDeviceEventEXT) {
+      fprintf(stderr, "cannot find vkRegisterDeviceEventEXT!\n");
+      return 0;
+   }
+
+   VkResult res =
+      vkRegisterDeviceEventEXT(vc.device, &e_info, NULL, &fence);
+
+   fprintf(stderr, "waiting for hotplug event ...");
+   res = vkWaitForFences(vc.device, 1, &fence, VK_TRUE, timeout);
+
+   if (res != VK_SUCCESS)
+      fprintf(stderr, "error waiting for fence!\n");
+
+   vkDestroyFence(vc.device, fence, NULL);
+
    mainloop(&vc);
 
    return 0;
